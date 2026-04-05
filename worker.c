@@ -189,12 +189,50 @@ int main(int argc, char *argv[])
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
+ * get_local_ip()
+ * Finds out which local IP address is used to reach the server.
+ * ═════════════════════════════════════════════════════════════════════ */
+static int get_local_ip(const char *target_ip, char *out_ip)
+{
+    int s = socket(AF_INET, SOCK_DGRAM, 0);
+    if (s < 0) return -1;
+    
+    struct sockaddr_in serv;
+    memset(&serv, 0, sizeof(serv));
+    serv.sin_family = AF_INET;
+    if (inet_pton(AF_INET, target_ip, &serv.sin_addr) <= 0) {
+        close(s);
+        return -1;
+    }
+    serv.sin_port = htons(53);
+
+    if (connect(s, (struct sockaddr *)&serv, sizeof(serv)) == 0) {
+        struct sockaddr_in name;
+        socklen_t namelen = sizeof(name);
+        if (getsockname(s, (struct sockaddr *)&name, &namelen) == 0) {
+            inet_ntop(AF_INET, &name.sin_addr, out_ip, INET_ADDRSTRLEN);
+            close(s);
+            return 0;
+        }
+    }
+    close(s);
+    return -1;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
  * run_registration_loop()
  * ═════════════════════════════════════════════════════════════════════ */
 static void run_registration_loop(const char *server_ip)
 {
     LOG("Registration daemon started for Server: %s", server_ip);
     
+    char my_ip[INET_ADDRSTRLEN] = "0.0.0.0";
+    if (get_local_ip(server_ip, my_ip) != 0) {
+        LOG("Warning: Could not determine local IP. Registration might fail routing.");
+    } else {
+        LOG("Determined local IP: %s", my_ip);
+    }
+
     struct sockaddr_in addr;
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
@@ -209,11 +247,16 @@ static void run_registration_loop(const char *server_ip)
         if (sockfd >= 0) {
             set_socket_timeout(sockfd, 5);
             if (connect(sockfd, (struct sockaddr *)&addr, sizeof(addr)) == 0) {
-                if (send_header(sockfd, MSG_REGISTER, FLAG_NONE, 0) == 0) {
-                    pkt_header_t h;
-                    if (recv_header(sockfd, &h) == 0 && h.type == MSG_REGISTER_ACK) {
-                        /* Successfully registered */
-                        /* Could log, but don't spam. */
+                register_payload_t rp;
+                memset(&rp, 0, sizeof(rp));
+                strncpy(rp.ip, my_ip, INET_ADDRSTRLEN - 1);
+
+                if (send_header(sockfd, MSG_REGISTER, FLAG_NONE, sizeof(register_payload_t)) == 0) {
+                    if (write_all(sockfd, &rp, sizeof(rp)) == 0) {
+                        pkt_header_t h;
+                        if (recv_header(sockfd, &h) == 0 && h.type == MSG_REGISTER_ACK) {
+                            /* Successfully registered */
+                        }
                     }
                 }
             }

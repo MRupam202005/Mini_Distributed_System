@@ -99,31 +99,45 @@ int main(void)
             socklen_t caddrlen = sizeof(caddr);
             int cfd = accept(register_fd, (struct sockaddr *)&caddr, &caddrlen);
             if (cfd >= 0) {
-                char client_ip[INET_ADDRSTRLEN];
-                inet_ntop(AF_INET, &caddr.sin_addr, client_ip, sizeof(client_ip));
-                
                 pkt_header_t h;
                 if (recv_header(cfd, &h) == 0 && h.type == MSG_REGISTER) {
+                    char client_ip[INET_ADDRSTRLEN] = {0};
+                    
+                    /* Favor explicit IP from payload (fixes WSL NAT issues) */
+                    if (h.payload_len == sizeof(register_payload_t)) {
+                        register_payload_t rp;
+                        if (read_all(cfd, &rp, sizeof(rp)) == 0) {
+                            strncpy(client_ip, rp.ip, INET_ADDRSTRLEN - 1);
+                        }
+                    }
+                    
+                    /* Fallback to socket IP if no payload provided */
+                    if (client_ip[0] == '\0' || strcmp(client_ip, "0.0.0.0") == 0) {
+                        inet_ntop(AF_INET, &caddr.sin_addr, client_ip, sizeof(client_ip));
+                    }
+                    
                     /* Check for duplicates */
-                    int duplicate = 0;
+                    int duplicate = -1;
                     for (int i = 0; i < wcount; i++) {
                         if (strcmp(workers[i].ip, client_ip) == 0) {
-                            duplicate = 1;
+                            duplicate = i;
                             break;
                         }
                     }
-                    if (!duplicate) {
+                    
+                    if (duplicate == -1) {
                         if (wcount < MAX_WORKERS) {
                             memset(&workers[wcount], 0, sizeof(worker_info_t));
                             strncpy(workers[wcount].ip, client_ip, INET_ADDRSTRLEN - 1);
                             wcount++;
-                            printf("\n[SERVER] New worker registered: %s\n", client_ip);
+                            printf("\n[SERVER] New worker registered: %s (from %s)\n", 
+                                   client_ip, inet_ntoa(caddr.sin_addr));
                         } else {
                             printf("\n[SERVER] Max workers reached. Rejecting %s.\n", client_ip);
                         }
-                        printf("dte> ");
                     }
                     send_header(cfd, MSG_REGISTER_ACK, FLAG_NONE, 0);
+                    printf("dte> ");
                 }
                 close(cfd);
                 fflush(stdout);

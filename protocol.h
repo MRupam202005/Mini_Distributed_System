@@ -97,6 +97,15 @@ typedef struct __attribute__((packed)) {
     uint16_t total_procs;   /**< denominator of "1/234" field            */
 } load_payload_t;
 
+#include <netinet/in.h>
+
+/**
+ * register_payload_t — payload sent for MSG_REGISTER.
+ */
+typedef struct __attribute__((packed)) {
+    char ip[INET_ADDRSTRLEN];
+} register_payload_t;
+
 /**
  * error_payload_t  —  human-readable error string (not NUL-terminated
  * on the wire; length is given by pkt_header_t.payload_len).
@@ -106,6 +115,7 @@ typedef struct __attribute__((packed)) {
     uint8_t  error_code;    /**< application-level error code (see below)*/
     char     message[255];  /**< UTF-8 error message, may be shorter     */
 } error_payload_t;
+
 
 /* ── Application-level error codes ─────────────────────────────────────── */
 
