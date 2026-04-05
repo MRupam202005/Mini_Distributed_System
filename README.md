@@ -14,16 +14,23 @@ Compile the Server and Worker binaries.
 make all
 ```
 
-### Step 2: Start the Worker
-Open a terminal and run the worker. It will stay active, waiting for tasks.
+### Step 2: Start the Server (Interactive Console)
+Open a terminal and start the server. It will display its IP address and wait for commands.
 ```bash
-./worker
+./server
 ```
 
-### Step 3: Dispatch a Task (Server)
-Open a **second terminal** and send the sample task to the local worker.
+### Step 3: Register a Worker
+Open a **second terminal** and start a worker, passing the server's IP address (e.g., `127.0.0.1` for local testing).
 ```bash
-./server task_example.c 127.0.0.1
+./worker 127.0.0.1
+```
+The server terminal will notify you that a new worker has registered.
+
+### Step 4: Dispatch a Task
+In the **first terminal** (the Server), type the name of the task you want to execute:
+```bash
+dte> task_example.c
 ```
 
 ---
@@ -36,16 +43,18 @@ The system follows a specific sequence of events to ensure tasks are executed on
 
 | Step | Server (Coordinator) | Worker |
 | :--- | :--- | :--- |
-| **1** | Compiles `.c` source → Binary | *Listening on ports 9100/9101* |
-| **2** | **Query Load:** "How busy are you?" → | ← Reads `/proc/loadavg` and responds |
-| **3** | Picks best worker & connects | *Forking child to handle execution* |
-| **4** | **Send Task:** Streams binary data → | ← ACKs receipt & saves to `/tmp` |
-| **5** | *Waiting for results...* | **Executes:** Runs binary & captures output |
-| **6** | **Receive Result:** Displays output | ← Sends captured text & deletes binary |
+| **1** | **Starts & Listens:** Waits for registrations | *Starts & connects* to Server |
+| **2** | **Registers Worker:** Adds to internal pool | ← Sends `MSG_REGISTER` (every 5s) |
+| **3** | *[User types **`task.c`**]* Compiles → Binary | *Listening on ports 9100/9101* |
+| **4** | **Query Load:** "How busy are you?" → | ← Reads `/proc/loadavg` and responds |
+| **5** | Picks best worker & connects | *Forking child to handle execution* |
+| **6** | **Send Task:** Streams binary data → | ← ACKs receipt & saves to `/tmp` |
+| **7** | *Waiting for results...* | **Executes:** Runs binary & captures output |
+| **8** | **Receive Result:** Displays output | ← Sends captured text & deletes binary |
 
 ### Entity Roles
-- **Server (Coordinator):** The brain. It compiles code, checks worker health/load, and dispatches binaries.
-- **Worker:** The muscle. It reports its CPU load, receives binaries, and executes them in an isolated process.
+- **Server (Coordinator):** The brain. It provides an interactive console, accepts worker registrations, compiles code, checks worker health/load, and dispatches binaries.
+- **Worker:** The muscle. It registers with the Server in the background, reports its CPU load, receives binaries, and executes them in an isolated process.
 
 ---
 
@@ -68,6 +77,7 @@ The system follows a specific sequence of events to ensure tasks are executed on
 ### Network Ports
 - **9100 (Exec Port):** Used for binary transfer and receiving execution results.
 - **9101 (Load Port):** Used for quick load-balancing queries.
+- **9102 (Register Port):** Used by the Server to receive automatic `MSG_REGISTER` pings from Workers.
 
 ### Architecture Highlights
 - **Concurrency:** Worker handles multiple simultaneous clients using `fork()`.
@@ -103,24 +113,29 @@ ip addr show | grep "inet "
 
 ### Step 2: Configure Firewalls
 On each Worker, you must allow incoming TCP traffic on ports **9100** and **9101**.
+On the Server, you must allow incoming TCP traffic on port **9102**.
 ```bash
-# Ubuntu/Debian (UFW)
+# Ubuntu/Debian (UFW) - On Worker
 sudo ufw allow 9100/tcp
 sudo ufw allow 9101/tcp
+
+# Ubuntu/Debian (UFW) - On Server
+sudo ufw allow 9102/tcp
 ```
 
-### Step 3: Start Workers
-Run `./worker` on every worker machine.
-
-### Step 4: Dispatch from Server
-On the **Server (Device 1)**, launch `server` with the worker IPs:
+### Step 3: Start the Server
+On the **Server (Device 1)**, launch `server`. Note the IP address it prints.
 ```bash
-# Single remote worker
-./server task.c 192.168.1.10
-
-# Multi-worker load balancing
-./server task.c 192.168.1.10 192.168.1.11 192.168.1.12
+./server
+# Example Output: [SERVER] Local IP address: 192.168.1.10
 ```
+
+### Step 4: Connect Workers
+Run `./worker` on every underlying physical machine, pointing them to the Server IP.
+```bash
+./worker 192.168.1.10
+```
+Workers will automatically ping the server every 5 seconds to maintain their registration. You can now use the `workers` command in the `dte>` console to verify they are connected.
 
 ### Troubleshooting
 - **Ping Check:** Ensure `ping [Worker_IP]` works from the Server.
