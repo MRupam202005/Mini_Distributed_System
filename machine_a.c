@@ -98,19 +98,19 @@ int main(int argc, char *argv[])
     for (int i = 0; i < wcount; i++) {
         memset(&workers[i], 0, sizeof(workers[i]));
         strncpy(workers[i].ip, worker_ips[i], INET_ADDRSTRLEN - 1);
+        
+        printf("[A]   %-15s : Querying... ", workers[i].ip);
+        fflush(stdout);
+
         query_worker_load(worker_ips[i], &workers[i]);
 
         if (workers[i].reachable) {
-            printf("  Worker %-15s  load(1m)=%.2f  load(5m)=%.2f  "
-                   "load(15m)=%.2f  procs=%u/%u\n",
-                   workers[i].ip,
+            printf("SUCCESS (Load 1m=%.2f, 5m=%.2f, 15m=%.2f)\n",
                    workers[i].load.load_1min,
                    workers[i].load.load_5min,
-                   workers[i].load.load_15min,
-                   workers[i].load.running_procs,
-                   workers[i].load.total_procs);
+                   workers[i].load.load_15min);
         } else {
-            printf("  Worker %-15s  UNREACHABLE\n", workers[i].ip);
+            printf("FAILED (Unreachable)\n");
         }
     }
 
@@ -121,7 +121,7 @@ int main(int argc, char *argv[])
         unlink(bin_path);
         return EXIT_FAILURE;
     }
-    printf("[A] Selected worker: %s (load=%.2f)\n",
+    printf("[A] Selected worker: %-15s (Reason: Lowest 1-minute load = %.2f)\n",
            workers[chosen].ip, workers[chosen].load.load_1min);
 
     /* ── Step 4: Connect to selected worker and transfer binary ─────── */

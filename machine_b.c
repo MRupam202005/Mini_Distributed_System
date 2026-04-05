@@ -343,6 +343,22 @@ static void handle_exec_client(int cfd, struct sockaddr_in *addr)
         return;
     }
 
+    /* ── 3.5. Echo task output on worker terminal ───────────────────── */
+    LOG("\n"
+        "========================= TASK OUTPUT =========================\n"
+        "Client IP: %s\n", client_ip);
+
+    if (out_buf && out_len > 0) {
+        fwrite(out_buf, 1, out_len, g_log ? g_log : stdout);
+        /* Ensure there's a newline if the output doesn't have one */
+        if (out_buf[out_len - 1] != '\n') {
+            fputc('\n', g_log ? g_log : stdout);
+        }
+    } else {
+        LOG("(No output produced by the task)");
+    }
+    LOG("===============================================================");
+
     /* ── 4. Send captured output ────────────────────────────────────── */
     uint32_t send_len = (uint32_t)(out_len < MAX_OUTPUT_SIZE
                                    ? out_len : MAX_OUTPUT_SIZE);
