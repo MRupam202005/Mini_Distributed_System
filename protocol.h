@@ -1,6 +1,6 @@
 /* =============================================================================
  * protocol.h  —  Distributed Task Execution System
- * Shared header used by both Machine A (coordinator) and Machine B (worker).
+ * Shared header used by both Server (coordinator) and Worker.
  *
  * Wire format (every exchange begins with a pkt_header_t):
  *
@@ -21,11 +21,14 @@
 
 /* ── Compile-time constants ─────────────────────────────────────────────── */
 
-/** Port on which Machine B listens for binary-execution requests. */
+/** Port on which Worker listens for binary-execution requests. */
 #define WORKER_PORT          9100
 
-/** Port on which Machine B listens for load-query requests. */
+/** Port on which Worker listens for load-query requests. */
 #define LOAD_QUERY_PORT      9101
+
+/** Port on which Server listens for worker auto-registration. */
+#define REGISTER_PORT        9102
 
 /** Magic number that opens every packet — catches garbage connections early. */
 #define PROTO_MAGIC          0xDEADC0DE
@@ -39,13 +42,13 @@
 /** connect() / recv() wall-clock timeout in seconds. */
 #define NETWORK_TIMEOUT_SEC  30
 
-/** Maximum number of worker nodes Machine A knows about. */
+/** Maximum number of worker nodes Server knows about. */
 #define MAX_WORKERS          16
 
-/** Path for temporary binary on Machine B before execution. */
+/** Path for temporary binary on Worker before execution. */
 #define WORKER_TMP_BINARY    "/tmp/dte_task_exec"
 
-/** Maximum captured output (stdout+stderr) returned to Machine A (8 MiB). */
+/** Maximum captured output (stdout+stderr) returned to Server (8 MiB). */
 #define MAX_OUTPUT_SIZE      (8u * 1024u * 1024u)
 
 /* ── Message type codes ─────────────────────────────────────────────────── */
@@ -56,6 +59,8 @@ typedef enum {
     MSG_SEND_BINARY   = 0x03,   /**< A→B  : executable binary follows     */
     MSG_EXEC_RESULT   = 0x04,   /**< B→A  : captured output follows       */
     MSG_ACK           = 0x05,   /**< either direction: generic OK          */
+    MSG_REGISTER      = 0x06,   /**< B→A  : auto-register on startup       */
+    MSG_REGISTER_ACK  = 0x07,   /**< A→B  : registration successful        */
     MSG_ERROR         = 0xFF    /**< either direction: error_payload_t     */
 } msg_type_t;
 

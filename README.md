@@ -9,21 +9,21 @@ A minimal, production-aware distributed execution framework written in **pure C*
 Follow these steps to run the system on your own machine using `127.0.0.1`.
 
 ### Step 1: Build the Project
-Compile the Coordinator and Worker binaries.
+Compile the Server and Worker binaries.
 ```bash
 make all
 ```
 
-### Step 2: Start the Worker (Machine B)
+### Step 2: Start the Worker
 Open a terminal and run the worker. It will stay active, waiting for tasks.
 ```bash
-./machine_b
+./worker
 ```
 
-### Step 3: Dispatch a Task (Machine A)
+### Step 3: Dispatch a Task (Server)
 Open a **second terminal** and send the sample task to the local worker.
 ```bash
-./machine_a task_example.c 127.0.0.1
+./server task_example.c 127.0.0.1
 ```
 
 ---
@@ -34,7 +34,7 @@ The system follows a specific sequence of events to ensure tasks are executed on
 
 ### The Protocol "Handshake"
 
-| Step | Coordinator (Machine A) | Worker (Machine B) |
+| Step | Server (Coordinator) | Worker |
 | :--- | :--- | :--- |
 | **1** | Compiles `.c` source → Binary | *Listening on ports 9100/9101* |
 | **2** | **Query Load:** "How busy are you?" → | ← Reads `/proc/loadavg` and responds |
@@ -44,8 +44,8 @@ The system follows a specific sequence of events to ensure tasks are executed on
 | **6** | **Receive Result:** Displays output | ← Sends captured text & deletes binary |
 
 ### Entity Roles
-- **Machine A (Coordinator):** The brain. It compiles code, checks worker health/load, and dispatches binaries.
-- **Machine B (Worker):** The muscle. It reports its CPU load, receives binaries, and executes them in an isolated process.
+- **Server (Coordinator):** The brain. It compiles code, checks worker health/load, and dispatches binaries.
+- **Worker:** The muscle. It reports its CPU load, receives binaries, and executes them in an isolated process.
 
 ---
 
@@ -53,8 +53,8 @@ The system follows a specific sequence of events to ensure tasks are executed on
 
 ```text
 .
-├── machine_a.c       # Coordinator source (Dispatcher)
-├── machine_b.c       # Worker daemon source (Executor)
+├── server.c          # Server source (Dispatcher)
+├── worker.c          # Worker daemon source (Executor)
 ├── protocol.h        # Shared wire-format definitions & I/O helpers
 ├── task_example.c    # Sample task (Fibonacci calculation)
 ├── Makefile          # Build system (make all, make clean)
@@ -70,8 +70,8 @@ The system follows a specific sequence of events to ensure tasks are executed on
 - **9101 (Load Port):** Used for quick load-balancing queries.
 
 ### Architecture Highlights
-- **Concurrency:** Machine B handles multiple simultaneous clients using `fork()`.
-- **Load Balancing:** Machine A always selects the worker with the lowest **1-minute load average**.
+- **Concurrency:** Worker handles multiple simultaneous clients using `fork()`.
+- **Load Balancing:** Server always selects the worker with the lowest **1-minute load average**.
 - **Execution:** Tasks are run via `execv()` with stdout/stderr redirected into a pipe for capture.
 - **Cleanup:** Temporary binaries are unlinked immediately after execution to save disk space.
 
@@ -84,7 +84,7 @@ The system follows a specific sequence of events to ensure tasks are executed on
 
 | Risk | Mitigation |
 | :--- | :--- |
-| **Arbitrary Execution** | Run `machine_b` as a low-privilege user; Use firewalls to restrict access. |
+| **Arbitrary Execution** | Run `worker` as a low-privilege user; Use firewalls to restrict access. |
 | **Plaintext Transport** | Avoid running on public Wi-Fi; Use a VPN or SSH tunnel for remote work. |
 | **No Authentication** | Only expose ports 9100/9101 to trusted internal IP addresses. |
 
@@ -110,22 +110,22 @@ sudo ufw allow 9101/tcp
 ```
 
 ### Step 3: Start Workers
-Run `./machine_b` on every worker machine.
+Run `./worker` on every worker machine.
 
-### Step 4: Dispatch from Coordinator
-On the **Coordinator (Device 1)**, launch `machine_a` with the worker IPs:
+### Step 4: Dispatch from Server
+On the **Server (Device 1)**, launch `server` with the worker IPs:
 ```bash
 # Single remote worker
-./machine_a task.c 192.168.1.10
+./server task.c 192.168.1.10
 
 # Multi-worker load balancing
-./machine_a task.c 192.168.1.10 192.168.1.11 192.168.1.12
+./server task.c 192.168.1.10 192.168.1.11 192.168.1.12
 ```
 
 ### Troubleshooting
-- **Ping Check:** Ensure `ping [Worker_IP]` works from the Coordinator.
+- **Ping Check:** Ensure `ping [Worker_IP]` works from the Server.
 - **Connection Timeout:** Usually caused by a **firewall** blocking ports 9100/9101 on the worker side.
-- **Connection Refused:** Ensure `machine_b` is actually running on the worker.
+- **Connection Refused:** Ensure `worker` is actually running on the worker.
 
 ---
 

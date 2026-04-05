@@ -20,29 +20,29 @@ DEPS    := protocol.h
 
 .PHONY: all clean install help
 
-all: machine_a machine_b
+all: server worker
 
-machine_a: machine_a.c $(DEPS)
+server: server.c $(DEPS)
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 	@echo "  [OK] Built $@"
 
-machine_b: machine_b.c $(DEPS)
+worker: worker.c $(DEPS)
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 	@echo "  [OK] Built $@"
 
 clean:
-	@rm -f machine_a machine_b
+	@rm -f server worker
 	@echo "  [OK] Cleaned build artefacts"
 
 install: all
-	install -m 0755 machine_a /usr/local/bin/dte_coordinator
-	install -m 0755 machine_b /usr/local/bin/dte_worker
+	install -m 0755 server /usr/local/bin/dte_coordinator
+	install -m 0755 worker /usr/local/bin/dte_worker
 	@echo "  [OK] Installed to /usr/local/bin/"
 
 help:
 	@echo "Distributed Task Execution System — Makefile targets:"
-	@echo "  all        build both machine_a and machine_b"
-	@echo "  machine_a  build the coordinator only"
-	@echo "  machine_b  build the worker only"
+	@echo "  all        build both server and worker"
+	@echo "  server     build the coordinator only"
+	@echo "  worker     build the worker only"
 	@echo "  clean      remove compiled binaries"
 	@echo "  install    copy binaries to /usr/local/bin (needs sudo)"

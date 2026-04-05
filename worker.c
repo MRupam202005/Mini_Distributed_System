@@ -1,5 +1,5 @@
 /* =============================================================================
- * machine_b.c  —  Worker / Daemon  (Machine B)
+ * worker.c  —  Worker / Daemon  (Worker)
  *
  * Responsibilities:
  *   1. Listen on LOAD_QUERY_PORT for MSG_QUERY_LOAD requests.
@@ -11,11 +11,11 @@
  *   3. Both servers handle multiple simultaneous clients via fork().
  *
  * Compilation:
- *   gcc -Wall -O2 -o machine_b machine_b.c
+ *   gcc -Wall -O2 -o worker worker.c
  *
  * Run as a daemon:
- *   ./machine_b            (foreground, logs to stdout)
- *   ./machine_b --daemon   (daemonise, logs to /var/log/dte_worker.log)
+ *   ./worker <server_ip>            (foreground, logs to stdout)
+ *   ./worker <server_ip> --daemon   (daemonise, logs to /var/log/dte_worker.log)
  * ============================================================================*/
 
 #define _POSIX_C_SOURCE 200809L
@@ -57,7 +57,7 @@ static FILE *g_log = NULL;      /**< log file handle (or stdout)             */
 static void dte_log(const char *tag, const char *fmt, ...)
 {
     FILE *out = g_log ? g_log : stdout;
-    fprintf(out, "[B]%s ", tag);
+    fprintf(out, "[WORKER]%s ", tag);
     va_list ap;
     va_start(ap, fmt);
     vfprintf(out, fmt, ap);
@@ -69,7 +69,7 @@ static void dte_log(const char *tag, const char *fmt, ...)
 static void dte_log_err(const char *tag, const char *fmt, ...)
 {
     FILE *out = g_log ? g_log : stderr;
-    fprintf(out, "[B][ERROR]%s ", tag);
+    fprintf(out, "[WORKER][ERROR]%s ", tag);
     va_list ap;
     va_start(ap, fmt);
     vfprintf(out, fmt, ap);
@@ -95,13 +95,20 @@ static int  execute_binary(const char *bin_path,
 static void send_error(int cfd, app_error_t code, const char *msg);
 static void reap_children(int sig);
 static void set_socket_timeout(int sockfd, int seconds);
+static void run_registration_loop(const char *server_ip);
 
 /* ═══════════════════════════════════════════════════════════════════════
  * main()
  * ═════════════════════════════════════════════════════════════════════ */
 int main(int argc, char *argv[])
 {
-    int do_daemon = (argc >= 2 && strcmp(argv[1], "--daemon") == 0);
+    if (argc < 2) {
+        fprintf(stderr, "Usage: %s <server_ip> [--daemon]\n", argv[0]);
+        return EXIT_FAILURE;
+    }
+
+    const char *server_ip = argv[1];
+    int do_daemon = (argc >= 3 && strcmp(argv[2], "--daemon") == 0);
 
     if (do_daemon) {
         /* daemonise: double-fork, close stdio, redirect to log file */
@@ -116,7 +123,7 @@ int main(int argc, char *argv[])
         }
     }
 
-    LOG("Worker starting (pid=%d)", getpid());
+    LOG("Worker starting (pid=%d) connecting to Server at %s", getpid(), server_ip);
 
     /* Install SIGCHLD handler to reap zombie children automatically */
     struct sigaction sa;
@@ -141,10 +148,24 @@ int main(int argc, char *argv[])
     LOG("Listening on port %d (load queries)", LOAD_QUERY_PORT);
     LOG("Listening on port %d (exec requests)", WORKER_PORT);
 
+    /* ── Fork a child for the registration loop ───────────────────── */
+    pid_t reg_child = fork();
+    if (reg_child < 0) {
+        LOG_ERR("fork for registration loop");
+        return EXIT_FAILURE;
+    }
+    if (reg_child == 0) {
+        close(load_lfd);
+        close(exec_lfd);
+        run_registration_loop(server_ip);
+        return EXIT_SUCCESS;
+    }
+
     /* ── Fork a child for the load-query server; parent runs exec ─── */
     pid_t child = fork();
     if (child < 0) {
         LOG_ERR("fork for load server");
+        kill(reg_child, SIGTERM);
         return EXIT_FAILURE;
     }
 
@@ -159,10 +180,48 @@ int main(int argc, char *argv[])
     close(load_lfd);
     run_exec_server(exec_lfd);
 
-    /* Clean up child if parent exits */
+    /* Clean up children if parent exits */
     kill(child, SIGTERM);
+    kill(reg_child, SIGTERM);
     waitpid(child, NULL, 0);
+    waitpid(reg_child, NULL, 0);
     return EXIT_SUCCESS;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * run_registration_loop()
+ * ═════════════════════════════════════════════════════════════════════ */
+static void run_registration_loop(const char *server_ip)
+{
+    LOG("Registration daemon started for Server: %s", server_ip);
+    
+    struct sockaddr_in addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(REGISTER_PORT);
+    if (inet_pton(AF_INET, server_ip, &addr.sin_addr) <= 0) {
+        LOG_ERR("Invalid Server IP: %s\n", server_ip);
+        exit(EXIT_FAILURE);
+    }
+
+    while (1) {
+        int sockfd = socket(AF_INET, SOCK_STREAM, 0);
+        if (sockfd >= 0) {
+            set_socket_timeout(sockfd, 5);
+            if (connect(sockfd, (struct sockaddr *)&addr, sizeof(addr)) == 0) {
+                if (send_header(sockfd, MSG_REGISTER, FLAG_NONE, 0) == 0) {
+                    pkt_header_t h;
+                    if (recv_header(sockfd, &h) == 0 && h.type == MSG_REGISTER_ACK) {
+                        /* Successfully registered */
+                        /* Could log, but don't spam. */
+                    }
+                }
+            }
+            close(sockfd);
+        }
+        /* Sleep before trying again to keep the server's registry fresh */
+        sleep(5);
+    }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
